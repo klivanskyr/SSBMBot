@@ -133,7 +133,7 @@ pre_action_features = [
 
 if __name__ == "__main__":
     # Load your game
-    GAME_PATH = r"C:\Users\Eswor\OneDrive\Documents\Slippi\2025-10\Game_20251015T011631.slp"
+    GAME_PATH = r"\SSBMBot\Game_20251015T011631.slp"
     game = peppi_py.read_slippi(GAME_PATH)
     np_data = flatten_game_to_numpy(game)
 

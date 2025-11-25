@@ -3,6 +3,9 @@ import pyarrow as pa
 import numpy as np
 import argparse
 import os
+import p_consts
+from scipy.spatial.distance import cdist
+
 
 """
 Pass a peppi_py.game object to the flatten_game_to_numpy function and it will return a dict which maps 
@@ -60,78 +63,22 @@ def flatten_game_to_numpy(game):
         
     return final_data
 
-
-
-
-
-
-#these are all the included features, can be changed 
-post_state_features = [
-    'p0_leader_post_airborne',
-    'p0_leader_post_animation_index',
-    'p0_leader_post_character',
-    'p0_leader_post_combo_count',
-    'p0_leader_post_direction',
-    'p0_leader_post_ground',
-    'p0_leader_post_hitlag',
-    'p0_leader_post_hurtbox_state',
-    'p0_leader_post_jumps',
-    'p0_leader_post_l_cancel',
-    'p0_leader_post_last_attack_landed',
-    'p0_leader_post_last_hit_by',
-    'p0_leader_post_percent',
-    'p0_leader_post_position_x',
-    'p0_leader_post_position_y',
-    'p0_leader_post_shield',
-    'p0_leader_post_state',
-    'p0_leader_post_state_age',
-    'p0_leader_post_stocks',
-    'p0_leader_post_velocities_knockback_x',
-    'p0_leader_post_velocities_knockback_y',
-    'p0_leader_post_velocities_self_x_air',
-    'p0_leader_post_velocities_self_x_ground',
-    'p0_leader_post_velocities_self_y',
-
-    'p1_leader_post_airborne',
-    'p1_leader_post_animation_index',
-    'p1_leader_post_character',
-    'p1_leader_post_combo_count',
-    'p1_leader_post_direction',
-    'p1_leader_post_ground',
-    'p1_leader_post_hitlag',
-    'p1_leader_post_hurtbox_state',
-    'p1_leader_post_jumps',
-    'p1_leader_post_l_cancel',
-    'p1_leader_post_last_attack_landed',
-    'p1_leader_post_last_hit_by',
-    'p1_leader_post_percent',
-    'p1_leader_post_position_x',
-    'p1_leader_post_position_y',
-    'p1_leader_post_shield',
-    'p1_leader_post_state',
-    'p1_leader_post_state_age',
-    'p1_leader_post_stocks',
-    'p1_leader_post_velocities_knockback_x',
-    'p1_leader_post_velocities_knockback_y',
-    'p1_leader_post_velocities_self_x_air',
-    'p1_leader_post_velocities_self_x_ground',
-    'p1_leader_post_velocities_self_y',
-]
-
-pre_action_features = [
-    # Analog stick values (floats)
-    'p0_leader_pre_joystick_x', #these still need to be discretized into one pair
-    'p0_leader_pre_joystick_y', 
-    'p0_leader_pre_cstick_x', #these still need to be discretized into one pair
-    'p0_leader_pre_cstick_y',
+def discretize(joy_x : str, joy_y: str) -> np.ndarray:
+    """
+    Pass in the keys for dict corresponding to joystick x and joystick y.
     
-    # Physical trigger values (floats)
-    'p0_leader_pre_triggers_physical_l', 
-    'p0_leader_pre_triggers_physical_r',
-    
-    # Physical button bitmask (integer)
-    'p0_leader_pre_buttons_physical',  #this still needs to be processed
-]
+    Used for both the left stick and the c stick
+    """
+    raw_inputs = np.stack([np_data[joy_x], np_data[joy_y]], axis = 1)
+    distances = cdist(raw_inputs, p_consts.STICK_XY_CLUSTER_CENTERS_V1, metric='euclidean')
+    nearest_indices = np.argmin(distances, axis=1)
+    snapped_coordinates = p_consts.STICK_XY_CLUSTER_CENTERS_V1[nearest_indices]
+    return snapped_coordinates
+
+
+
+
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Flatten a Slippi .slp game file into numpy arrays for states/actions.")
@@ -147,13 +94,24 @@ if __name__ == "__main__":
         print(f"Flattened {len(np_data.keys())} arrays.")
         print(f"P1's X-Position array (shape): {np_data['p0_leader_post_position_x'].shape}")
         print(f"P2's Buttons array (shape): {np_data['p1_leader_pre_buttons'].shape}")
+    
+    disc_left_stick = discretize('p0_leader_pre_joystick_x', 'p0_leader_pre_joystick_y')
+    disc_c_stick = discretize('p0_leader_pre_cstick_x', 'p0_leader_pre_cstick_y')
 
     post_data_full = np.stack(
-        [np_data[key] for key in post_state_features], axis=1
+        [np_data[key] for key in p_consts.POST_STATE_FEATURES], axis=1
     )
 
-    pre_data_full = np.stack(
-        [np_data[key] for key in pre_action_features], axis=1
+    #just need to fix the buttons, but the sticks should hopefully be discretized :)
+    pre_data_full = np.stack([
+        disc_left_stick,
+        disc_c_stick,
+        np_data['p0_leader_pre_triggers_physical_l'],
+        np_data['p0_leader_pre_triggers_physical_r'],
+        np_data['p0_leader_pre_buttons_physical']
+    ],
+        axis=1
+        
     )
 
     if args.debug:
@@ -169,8 +127,7 @@ if __name__ == "__main__":
     if args.debug:
         print(f"\nFinal State (S) shape: {S.shape}")
         print(f"Final Action (A) shape: {A.shape}")
-
-    print(S)
+        print(S)
 
     # Now S[i] is perfectly aligned with A[i]
     # (i.e., post[i] is aligned with pre[i+1])

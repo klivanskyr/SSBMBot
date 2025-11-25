@@ -1,6 +1,8 @@
 import peppi_py
 import pyarrow as pa
 import numpy as np
+import argparse
+import os
 
 """
 Pass a peppi_py.game object to the flatten_game_to_numpy function and it will return a dict which maps 
@@ -132,14 +134,19 @@ pre_action_features = [
 ]
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Flatten a Slippi .slp game file into numpy arrays for states/actions.")
+    parser.add_argument("--file", help="Path to the .slp game file (default: Game_20251015T011631.slp)", required=True)
+    parser.add_argument("--debug", help="Enable debug output", default=True, action="store_true")
+    args = parser.parse_args()
+    
     # Load your game
-    GAME_PATH = r"\SSBMBot\Game_20251015T011631.slp"
-    game = peppi_py.read_slippi(GAME_PATH)
+    game = peppi_py.read_slippi(args.file)
     np_data = flatten_game_to_numpy(game)
 
-    print(f"Flattened {len(np_data.keys())} arrays.")
-    print(f"P1's X-Position array (shape): {np_data['p0_leader_post_position_x'].shape}")
-    print(f"P2's Buttons array (shape): {np_data['p1_leader_pre_buttons'].shape}")
+    if args.debug:
+        print(f"Flattened {len(np_data.keys())} arrays.")
+        print(f"P1's X-Position array (shape): {np_data['p0_leader_post_position_x'].shape}")
+        print(f"P2's Buttons array (shape): {np_data['p1_leader_pre_buttons'].shape}")
 
     post_data_full = np.stack(
         [np_data[key] for key in post_state_features], axis=1
@@ -149,8 +156,9 @@ if __name__ == "__main__":
         [np_data[key] for key in pre_action_features], axis=1
     )
 
-    print(f"\nFull Post-State array shape: {post_data_full.shape}")
-    print(f"Full Pre-Action array shape: {pre_data_full.shape}")
+    if args.debug:
+        print(f"\nFull Post-State array shape: {post_data_full.shape}")
+        print(f"Full Pre-Action array shape: {pre_data_full.shape}")
 
     # S = All post-frames *except the last one*
     S = post_data_full[:-1]
@@ -158,11 +166,15 @@ if __name__ == "__main__":
     # A = All pre-frames *except the first one*
     A = pre_data_full[1:]
 
-    print(f"\nFinal State (S) shape: {S.shape}")
-    print(f"Final Action (A) shape: {A.shape}")
+    if args.debug:
+        print(f"\nFinal State (S) shape: {S.shape}")
+        print(f"Final Action (A) shape: {A.shape}")
 
     print(S)
 
     # Now S[i] is perfectly aligned with A[i]
     # (i.e., post[i] is aligned with pre[i+1])
     # You can now save S and A to your HDF5 file.
+
+    # S[9] is the 10th frame
+    # A[10] is the 11th action taken from inputs on the 10th frame

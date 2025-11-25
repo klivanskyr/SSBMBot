@@ -1,0 +1,4 @@
+inflection==0.5.1
+numpy==2.3.5
+peppi-py==0.8.6
+pyarrow==21.0.0

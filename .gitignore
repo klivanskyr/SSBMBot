@@ -1,2 +1,8 @@
-./extracted
-./melee_public_slp_dataset_v2.7z
+__pycache__/
+wandb/
+
+extracted
+melee_public_slp_dataset_v2.7z
+
+Melee.iso
+checkpoints/

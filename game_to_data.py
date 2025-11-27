@@ -5,6 +5,7 @@ import argparse
 import os
 import p_consts
 from scipy.spatial.distance import cdist
+from typing import Tuple, List
 
 
 """
@@ -76,7 +77,64 @@ def discretize(joy_x : str, joy_y: str) -> np.ndarray:
     return snapped_coordinates
 
 
+#function may not be entirely consistent, havent checked it too deeply
+#it is self consistent with attempts at breaking the task into smaller pieces and creating the same mapping
+def create_final_action_events(bitmask_array: np.ndarray) -> Tuple[np.ndarray, List[str]]:
+    """
+    Decodes the raw bitmask, aggregates redundant actions (JUMP/SHIELD), 
+    and converts the sustained signal into discrete press events (using np.diff).
+    
+    Returns:
+        A tuple containing the final (N, 10) array of press events and the column names.
+    """
+    
+    # 1. Define Bitmask Constants (Same as before)
+    A_MASK, B_MASK, L_MASK, R_MASK, Z_MASK, START_MASK = 128, 256, 64, 32, 16, 8
+    D_UP_MASK, D_DOWN_MASK, D_LEFT_MASK, D_RIGHT_MASK = 4, 2, 1, 512
+    X_MASK, Y_MASK = 1024, 2048
+    
+    # Define the 10 final actions and their combined masks
+    FINAL_ACTION_MAPPING = [
+        ('JUMP', X_MASK | Y_MASK),    
+        ('SHIELD', L_MASK | R_MASK),
+        ('A', A_MASK),
+        ('B', B_MASK),
+        ('Z', Z_MASK),
+        ('Start', START_MASK),
+        ('D_Up', D_UP_MASK),
+        ('D_Down', D_DOWN_MASK),
+        ('D_Left', D_LEFT_MASK),
+        ('D_Right', D_RIGHT_MASK),
+    ]
 
+    final_names = [name for name, mask in FINAL_ACTION_MAPPING]
+    mask_values = np.array([mask for name, mask in FINAL_ACTION_MAPPING])
+
+    # 2. Decode and Aggregate (Step 1)
+    
+    # Vectorized Bitwise AND: (N, 1) & (1, 10) -> (N, 10)
+    input_reshaped = bitmask_array.reshape(-1, 1)
+    masks_np = mask_values.reshape(1, -1)
+    
+    decoded_mask_values = input_reshaped & masks_np
+    
+    # Convert to binary (1 for held, 0 for not held). This is the sustained signal.
+    sustained_actions = (decoded_mask_values > 0).astype(np.int8)
+
+    # 3. Create Events (Step 2: np.diff)
+    
+    # Pad the top with zeros to calculate the change on the first frame
+    num_features = sustained_actions.shape[1]
+    zeros = np.zeros((1, num_features), dtype=sustained_actions.dtype)
+    padded_array = np.vstack([zeros, sustained_actions])
+    
+    # Calculate difference between frames
+    change_array = np.diff(padded_array, axis=0)
+    
+    # Isolate only positive transitions (presses: 0 -> 1)
+    press_events = (change_array > 0).astype(np.int8)
+    
+    return press_events, final_names
 
 
 
@@ -97,18 +155,30 @@ if __name__ == "__main__":
     
     disc_left_stick = discretize('p0_leader_pre_joystick_x', 'p0_leader_pre_joystick_y')
     disc_c_stick = discretize('p0_leader_pre_cstick_x', 'p0_leader_pre_cstick_y')
+    button_multi_hot = create_final_action_events(np_data['p0_leader_pre_buttons_physical'])
 
     post_data_full = np.stack(
         [np_data[key] for key in p_consts.POST_STATE_FEATURES], axis=1
     )
 
     #just need to fix the buttons, but the sticks should hopefully be discretized :)
+    
+    #look at hal/hal/preprocess/transformations.py for button encoding and shit
+    # pre_data_full = np.stack([
+    #     disc_left_stick,
+    #     disc_c_stick,
+    #     np_data['p0_leader_pre_triggers_physical_l'],
+    #     np_data['p0_leader_pre_triggers_physical_r'],
+    #     np_data['p0_leader_pre_buttons_physical']
+    # ],
+    #     axis=1
+        
+    # )
+    
     pre_data_full = np.stack([
         disc_left_stick,
         disc_c_stick,
-        np_data['p0_leader_pre_triggers_physical_l'],
-        np_data['p0_leader_pre_triggers_physical_r'],
-        np_data['p0_leader_pre_buttons_physical']
+        button_multi_hot
     ],
         axis=1
         

@@ -5,7 +5,7 @@ import argparse
 import os
 import p_consts
 from scipy.spatial.distance import cdist
-from typing import Tuple, List
+from typing import Tuple, List, Callable
 
 
 """
@@ -88,27 +88,8 @@ def create_final_action_events(bitmask_array: np.ndarray) -> Tuple[np.ndarray, L
         A tuple containing the final (N, 10) array of press events and the column names.
     """
     
-    # 1. Define Bitmask Constants (Same as before)
-    A_MASK, B_MASK, L_MASK, R_MASK, Z_MASK, START_MASK = 128, 256, 64, 32, 16, 8
-    D_UP_MASK, D_DOWN_MASK, D_LEFT_MASK, D_RIGHT_MASK = 4, 2, 1, 512
-    X_MASK, Y_MASK = 1024, 2048
-    
-    # Define the 10 final actions and their combined masks
-    FINAL_ACTION_MAPPING = [
-        ('JUMP', X_MASK | Y_MASK),    
-        ('SHIELD', L_MASK | R_MASK),
-        ('A', A_MASK),
-        ('B', B_MASK),
-        ('Z', Z_MASK),
-        ('Start', START_MASK),
-        ('D_Up', D_UP_MASK),
-        ('D_Down', D_DOWN_MASK),
-        ('D_Left', D_LEFT_MASK),
-        ('D_Right', D_RIGHT_MASK),
-    ]
-
-    final_names = [name for name, mask in FINAL_ACTION_MAPPING]
-    mask_values = np.array([mask for name, mask in FINAL_ACTION_MAPPING])
+    final_names = [name for name, mask in p_consts.FINAL_ACTION_MAPPING]
+    mask_values = np.array([mask for name, mask in p_consts.FINAL_ACTION_MAPPING])
 
     # 2. Decode and Aggregate (Step 1)
     
@@ -136,6 +117,103 @@ def create_final_action_events(bitmask_array: np.ndarray) -> Tuple[np.ndarray, L
     
     return press_events, final_names
 
+def _normalize_min_max(X: np.ndarray) -> np.ndarray:
+    """
+    Normalizes a feature array X to the range [0, 1], with optional inversion.
+    """
+    X_min = np.min(X)
+    X_max = np.max(X)
+    denominator = X_max - X_min
+    
+    if denominator == 0:
+        return np.zeros_like(X, dtype=np.float32)
+    
+    # If inverse_scale is True, the numerator becomes (X_max - X)
+    numerator = X - X_min
+        
+    X_norm = numerator / denominator
+    
+    return X_norm.astype(np.float32)
+
+def _inverse_min_max(X: np.ndarray) -> np.ndarray:
+    """
+    Normalizes a feature array X to the range [0, 1], with optional inversion.
+    """
+    X_min = np.min(X)
+    X_max = np.max(X)
+    denominator = X_max - X_min
+    
+    if denominator == 0:
+        return np.zeros_like(X, dtype=np.float32)
+    
+    
+    numerator = X_max - X 
+    X_norm = numerator / denominator
+    
+    return X_norm.astype(np.float32)
+
+
+def _normalize_bipolar(X: np.ndarray) -> np.ndarray:
+    """
+    Normalizes a feature array X to the range [-1, 1].
+    
+    Args:
+        X: The NumPy array column for a single feature (e.g., all X-position values).
+
+    Returns:
+        The normalized array (float32).
+    """
+    # Calculate min and max across the array
+    X_min = np.min(X)
+    X_max = np.max(X)
+    
+    denominator = X_max - X_min
+    
+    # Handle the edge case where the feature is constant
+    if denominator == 0:
+        # If constant, it's centered at zero, so all values become 0.
+        return np.zeros_like(X, dtype=np.float32)
+    
+    # Apply the Bipolar formula: ((2 * (X - X_min)) / Range) - 1
+    X_norm = (2 * (X - X_min) / denominator) - 1
+    
+    return X_norm.astype(np.float32)
+
+def construct_post_data(np_data: dict) -> np.ndarray:
+    normal = np.stack(
+        [np_data[key] for key in p_consts.NORMALIZE_MIN_MAX], axis=1
+    )
+    inverse = np.stack(
+        [np_data[key] for key in p_consts.INVERSE_MAPPING], axis=1
+    )
+    bip = np.stack(
+        [np_data[key] for key in p_consts.BIPOLAR_MAPPING], axis=1
+    )
+    normal = _apply_func_columnwise(normal, _normalize_min_max)
+    inverse = _apply_func_columnwise(inverse, _inverse_min_max)
+    bip = _apply_func_columnwise(bip, _normalize_bipolar)
+    S = np.concatenate([bip, inverse, normal], axis=1)
+    return S
+
+def _apply_func_columnwise(X_data: np.ndarray, func: Callable[[np.ndarray], np.ndarray]) -> np.ndarray:
+    """
+    Applies a single-input function (like normalize_bipolar) to every column 
+    of the input data array X_data.
+
+    Args:
+        X_data: The 2D NumPy array containing features to be normalized (e.g., S_bipolar_data).
+        func: The normalization function to apply (e.g., normalize_bipolar).
+
+    Returns:
+        A new 2D array where every column has been independently normalized.
+    """
+    normalized_columns = [
+        func(X_data[:, i]) 
+        for i in range(X_data.shape[1])
+    ]
+    return np.column_stack(normalized_columns)
+    
+
 
 
 if __name__ == "__main__":
@@ -156,10 +234,11 @@ if __name__ == "__main__":
     disc_left_stick = discretize('p0_leader_pre_joystick_x', 'p0_leader_pre_joystick_y')
     disc_c_stick = discretize('p0_leader_pre_cstick_x', 'p0_leader_pre_cstick_y')
     button_multi_hot = create_final_action_events(np_data['p0_leader_pre_buttons_physical'])
+    post_data_full = construct_post_data(np_data)
 
-    post_data_full = np.stack(
-        [np_data[key] for key in p_consts.POST_STATE_FEATURES], axis=1
-    )
+    # post_data_full = np.stack(
+    #     [np_data[key] for key in p_consts.POST_STATE_FEATURES], axis=1
+    # )
 
     #just need to fix the buttons, but the sticks should hopefully be discretized :)
     
@@ -175,7 +254,7 @@ if __name__ == "__main__":
         
     # )
     
-    pre_data_full = np.stack([
+    pre_data_full = np.stack([  #i didnt include the physical triggers in this, but could 
         disc_left_stick,
         disc_c_stick,
         button_multi_hot

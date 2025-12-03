@@ -214,8 +214,6 @@ def _apply_func_columnwise(X_data: np.ndarray, func: Callable[[np.ndarray], np.n
     return np.column_stack(normalized_columns)
     
 
-
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Flatten a Slippi .slp game file into numpy arrays for states/actions.")
     parser.add_argument("--file", help="Path to the .slp game file (default: Game_20251015T011631.slp)", required=True)
@@ -233,8 +231,14 @@ if __name__ == "__main__":
     
     disc_left_stick = discretize('p0_leader_pre_joystick_x', 'p0_leader_pre_joystick_y')
     disc_c_stick = discretize('p0_leader_pre_cstick_x', 'p0_leader_pre_cstick_y')
-    button_multi_hot = create_final_action_events(np_data['p0_leader_pre_buttons_physical'])
+    button_multi_hot, action_list = create_final_action_events(np_data['p0_leader_pre_buttons_physical'])
     post_data_full = construct_post_data(np_data)
+    
+    #action list is just a list of all the possible actions to take corresponding to a column in button_multi_hot
+    
+    print(disc_c_stick.shape)
+    print(disc_left_stick.shape)
+    print(button_multi_hot.shape)
 
     # post_data_full = np.stack(
     #     [np_data[key] for key in p_consts.POST_STATE_FEATURES], axis=1
@@ -253,8 +257,10 @@ if __name__ == "__main__":
     #     axis=1
         
     # )
+    disc_left_stick_2d = disc_left_stick.reshape(-1, 1)
+    disc_c_stick_2d = disc_c_stick.reshape(-1, 1)
     
-    pre_data_full = np.stack([  #i didnt include the physical triggers in this, but could 
+    pre_data_full = np.concatenate([  #i didnt include the physical triggers in this, but could 
         disc_left_stick,
         disc_c_stick,
         button_multi_hot
